@@ -7,12 +7,13 @@
 //
 
 #import "OSETCustomerGmNativeAdapter.h"
-#import "OSETSDK/OSETSDK.h"
+#import "OSETGmAdapterSupport.h"
 
 
 @interface OSETCustomerGmNativeAdapter()<OSETNativeAdDelegate>
 @property (nonatomic,strong) OSETNativeAd *nativeAd;
 @property (nonatomic, weak) UIViewController *viewController;
+@property (nonatomic, copy) NSArray<OSETBaseView *> *expressViews;
 
 @end
 
@@ -24,12 +25,9 @@
 }
 
 - (void)loadNativeAdWithSlotID:(nonnull NSString *)slotID andSize:(CGSize)size imageSize:(CGSize)imageSize parameter:(nonnull NSDictionary *)parameter {
-    // 获取广告加载数量
-    
-    UIViewController * vc = [[UIViewController alloc]init];
-    if(self.viewController){
-        vc = self.viewController;
-    }
+    self.nativeAd.delegate = nil;
+    self.expressViews = @[];
+    UIViewController *vc = self.viewController ?: self.bridge.viewControllerForPresentingModalView;
     self.nativeAd = [[OSETNativeAd alloc] initWithSlotId:slotID size:size rootViewController:vc];
     self.nativeAd.delegate = self;
     [self.nativeAd loadAdData];
@@ -37,16 +35,17 @@
 }
 
 - (void)nativeExpressAdLoadSuccessWithNative:(id)native nativeExpressViews:(NSArray *)nativeExpressViews{
-    NSMutableArray *list = [[NSMutableArray alloc]init];
+    NSMutableArray<OSETBaseView *> *list = [[NSMutableArray alloc]init];
     NSMutableArray *exts = [[NSMutableArray alloc] init];
     for (int i = 0; i < nativeExpressViews.count; i++) {
-        OSETBaseView * view = [nativeExpressViews objectAtIndex:i];
+        id view = [nativeExpressViews objectAtIndex:i];
+        if (![view isKindOfClass:[OSETBaseView class]]) { continue; }
         [list addObject:view];
-        [exts addObject:@{
-            BUMMediaAdLoadingExtECPM : @(view.eCPM),
-        }];
+        [exts addObject:OSETGmLoadingExt([(OSETBaseView *)view eCPM])];
     }
-    [self.bridge nativeAd:self didLoadWithExpressViews:[list copy] exts:exts.copy];
+    // bridge 的加载回调可能同步触发比价结果，必须先保存广告归属。
+    self.expressViews = list.copy;
+    [self.bridge nativeAd:self didLoadWithExpressViews:self.expressViews exts:exts.copy];
 }
 - (void)nativeExpressAdRenderSuccess:(id)nativeExpressView{
 //    [self.bridge nativeAd:self renderSuccessWithExpressView:nativeExpressView];
@@ -66,8 +65,25 @@
 
 
 }
+- (void)nativeExpressAdDidExposured:(id)nativeExpressView {
+    // 必须回传加载时交给 GroMore 的同一个模板 View。
+    NSArray<OSETBaseView *> *views = self.expressViews;
+    if (!views.count || ![nativeExpressView isKindOfClass:[UIView class]]) { return; }
+    UIView *view = nativeExpressView;
+    while (view) {
+        NSUInteger index = [(NSArray *)views indexOfObjectIdenticalTo:view];
+        if (index != NSNotFound) {
+            [self.bridge nativeAd:self didVisibleWithMediatedNativeAd:views[index]];
+            return;
+        }
+        view = view.superview;
+    }
+}
 - (void)registerContainerView:(nonnull __kindof UIView *)containerView andClickableViews:(nonnull NSArray<__kindof UIView *> *)views forNativeAd:(nonnull id)nativeAd {
 
+}
+- (void)unregisterClickableViewsForNativeAd:(id)nativeAd {
+    // 当前适配器仅返回 OSET 模板广告，点击区域由 OSET 管理，无额外注册需要撤销。
 }
 
 - (void)renderForExpressAdView:(nonnull UIView *)expressAdView {
@@ -85,9 +101,10 @@
     self.nativeAd.viewController = viewController;
 }
 - (void)didReceiveBidResult:(BUMMediaBidResult *)result {
-    // 在此处理Client Bidding的结果回调
-//    NSLog(@"didReceiveBidResult = %@,%ld,%@,%@",result,(long)result.win,result.winnerPrice,result.winnerAdnID);
-
+    OSETGmReportNativeBidResult(self.expressViews, result);
+}
+- (void)dealloc {
+    _nativeAd.delegate = nil;
 }
 
 @end

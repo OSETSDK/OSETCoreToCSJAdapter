@@ -7,23 +7,26 @@
 //
 
 #import "OSETCustomerGmRewardAdapter.h"
-#import <OSETSDK/OSETSDK.h>
+#import "OSETGmAdapterSupport.h"
 @interface OSETCustomerGmRewardAdapter ()<OSETRewardVideoAdDelegate>
 @property (nonatomic,strong) OSETRewardVideoAd *rewardVideoAd;
+@property (nonatomic, assign) BOOL showing;
 
 @property (nonatomic, weak) UIViewController *viewController;
 @end
 @implementation OSETCustomerGmRewardAdapter
 
 - (BUMMediatedAdStatus)mediatedAdStatus {
-    return BUMMediatedAdStatusNormal;
+    BUMMediatedAdStatus status = BUMMediatedAdStatusUnknown;
+    status.valid = self.rewardVideoAd.isAdValid ? BUMMediatedAdStatusValueSure : BUMMediatedAdStatusValueDeny;
+    return status;
 }
 
 - (void)loadRewardedVideoAdWithSlotID:(nonnull NSString *)slotID andParameter:(nonnull NSDictionary *)parameter {
-    NSString * user_id = @"";
-    if(parameter[@"user_id"]){
-        user_id = parameter[@"user_id"];
-    }
+    self.rewardVideoAd.delegate = nil;
+    self.showing = NO;
+    id value = parameter[BUMAdLoadingParamRVUserID] ?: parameter[@"user_id"];
+    NSString *user_id = [value isKindOfClass:[NSString class]] ? value : @"";
     self.rewardVideoAd = [[OSETRewardVideoAd alloc] initWithSlotId:slotID withUserId:user_id];
     self.rewardVideoAd.delegate = self;
     [self.rewardVideoAd loadRewardAdData];
@@ -32,26 +35,30 @@
 - (BOOL)showAdFromRootViewController:(UIViewController * _Nonnull)viewController parameter:(nonnull NSDictionary *)parameter {
     self.viewController = viewController;
     if(self.rewardVideoAd && self.rewardVideoAd.isAdValid && viewController){
-        [self.rewardVideoAd showRewardFromRootViewController:self.viewController];
+        self.showing = YES;
+        [self.rewardVideoAd showRewardFromRootViewController:viewController];
         return YES;
     }else{
         NSError * error = [[NSError alloc]initWithDomain:@"广告未加载成功或已失效" code:72000 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"OSETBU"]}];
-        [self.bridge rewardedVideoAd:self didLoadFailWithError:error ext:@{}];
+        [self.bridge rewardedVideoAdDidShowFailed:self error:error];
         return NO;
     }
 }
 
 - (void)didReceiveBidResult:(BUMMediaBidResult *)result {
-    // 在此处理Client Bidding的结果回调
-    NSLog(@"didReceiveBidResult = %@,%ld,%@,%@",result,(long)result.win,result.winnerPrice,result.winnerAdnID);
+    OSETGmReportBidResult(self.rewardVideoAd, result);
 }
 - (void)rewardVideoDidReceiveSuccess:(nonnull id)rewardVideoAd slotId:(nonnull NSString *)slotId {
-    [self.bridge rewardedVideoAd:self didLoadWithExt:@{BUMMediaAdLoadingExtECPM:@(MAX(self.rewardVideoAd.eCPM, 0))}];
+    [self.bridge rewardedVideoAd:self didLoadWithExt:OSETGmLoadingExt(self.rewardVideoAd.eCPM)];
     [self.bridge rewardedVideoAdVideoDidLoad:self];
 }
 
 - (void)rewardVideoLoadToFailed:(nonnull id)rewardVideoAd error:(nonnull NSError *)error {
-    [self.bridge rewardedVideoAd:self didLoadFailWithError:error ext:@{}];
+    if (self.showing) {
+        [self.bridge rewardedVideoAdDidShowFailed:self error:error];
+    } else {
+        [self.bridge rewardedVideoAd:self didLoadFailWithError:error ext:@{}];
+    }
 }
 
 - (void)rewardVideoDidClick:(nonnull id)rewardVideoAd {
@@ -90,5 +97,8 @@
     
 }
 
+- (void)dealloc {
+    _rewardVideoAd.delegate = nil;
+}
 
 @end

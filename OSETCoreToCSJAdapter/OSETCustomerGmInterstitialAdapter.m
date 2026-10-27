@@ -7,7 +7,7 @@
 //
 
 #import "OSETCustomerGmInterstitialAdapter.h"
-#import <OSETSDK/OSETSDK.h>
+#import "OSETGmAdapterSupport.h"
 
 @interface OSETCustomerGmInterstitialAdapter ()<OSETInterstitialAdDelegate>
 
@@ -16,6 +16,7 @@
 @property (nonatomic, weak) UIViewController *viewController;
 
 @property (nonatomic, assign) CGSize size;
+@property (nonatomic, assign) BOOL showing;
 
 @end
 
@@ -29,6 +30,8 @@
 }
 
 - (void)loadInterstitialAdWithSlotID:(NSString *)slotID andSize:(CGSize)size parameter:(NSDictionary *)parameter {
+    self.interstitialAd.delegate = nil;
+    self.showing = NO;
     self.size = size;
     self.interstitialAd = [[OSETInterstitialAd alloc] initWithSlotId:slotID];
     self.interstitialAd.delegate = self;
@@ -38,22 +41,27 @@
 - (BOOL)showAdFromRootViewController:(UIViewController *)viewController parameter:(NSDictionary *)parameter {
     self.viewController = viewController;
     if(self.interstitialAd  && self.interstitialAd.isAdValid && viewController){
+        self.showing = YES;
         [self.interstitialAd showInterstitialFromRootViewController:viewController];
         return YES;
     }else{
         NSError * error = [[NSError alloc]initWithDomain:@"广告未加载成功或已失效" code:72000 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"OSETBU"]}];
-        [self.bridge interstitialAd:self didLoadFailWithError:error ext:@{}];
+        [self.bridge interstitialAdDidShowFailed:self error:error];
         return NO;
     }
 }
 
 - (void)interstitialDidReceiveSuccess:(nonnull id)interstitialAd slotId:(nonnull NSString *)slotId {
-    [self.bridge interstitialAd:self didLoadWithExt:@{BUMMediaAdLoadingExtECPM:@(MAX(self.interstitialAd.eCPM, 0))}];
+    [self.bridge interstitialAd:self didLoadWithExt:OSETGmLoadingExt(self.interstitialAd.eCPM)];
     [self.bridge interstitialAdRenderSuccess:self];
 }
 
 - (void)interstitialLoadToFailed:(nonnull id)interstitialAd error:(nonnull NSError *)error {
-    [self.bridge interstitialAd:self didLoadFailWithError:error ext:@{}];
+    if (self.showing) {
+        [self.bridge interstitialAdDidShowFailed:self error:error];
+    } else {
+        [self.bridge interstitialAd:self didLoadFailWithError:error ext:@{}];
+    }
 }
 
 - (void)interstitialDidClick:(nonnull id)interstitialAd {
@@ -66,8 +74,11 @@
     [self.bridge interstitialAdDidClose:self];
 }
 - (void)didReceiveBidResult:(BUMMediaBidResult *)result {
-    // 在此处理Client Bidding的结果回调
+    OSETGmReportBidResult(self.interstitialAd, result);
+}
 
+- (void)dealloc {
+    _interstitialAd.delegate = nil;
 }
 
 @end
