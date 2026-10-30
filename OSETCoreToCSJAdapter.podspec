@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "OSETCoreToCSJAdapter"
-  s.version      = "7.0.0.0"
+  s.version      = "7.0.3.0"
   s.summary      = "AdSet广告对接CSJ适配器"
   s.description  = <<-DESC
                     OSETSDK 是一个专业的广告聚合SDK，提供高效的广告展示和收益优化功能。

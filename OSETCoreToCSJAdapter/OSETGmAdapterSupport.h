@@ -84,6 +84,22 @@ static inline void OSETGmReportNativeBidResult(NSArray<OSETBaseView *> *views, B
     }
 }
 
+static inline void OSETGmReportNativeDataBidResult(OSETNativeDataAd *ad, NSArray *origins, BUMMediaBidResult *result) {
+    @try {
+        if (![result isKindOfClass:BUMMediaBidResult.class] || !origins.count || !ad) { return; }
+        if (!NSThread.isMainThread) {
+            dispatch_async(dispatch_get_main_queue(), ^{ OSETGmReportNativeDataBidResult(ad, origins, result); });
+            return;
+        }
+        id origin = [result respondsToSelector:@selector(originNativeAdData)] ? result.originNativeAdData : nil;
+        if ((origin && [origins indexOfObjectIdenticalTo:origin] != NSNotFound) || (!origin && origins.count == 1)) {
+            OSETGmReportBidResult(ad, result);
+        }
+    } @catch (NSException *exception) {
+        (void)exception;
+    }
+}
+
 static inline void OSETGmDismissSplash(OSETSplashAd *ad, UIView *bottomView) {
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{ OSETGmDismissSplash(ad, bottomView); });
